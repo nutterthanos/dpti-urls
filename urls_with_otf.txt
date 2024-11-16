@@ -1,0 +1,6 @@
+https://dpti-web01.syd1.squiz.cloud/?a=327834 - FontAwesome.otf";
+https://dpti-web01.syd1.squiz.cloud/?a=503566 - Graphik-Regular.otf";
+https://dpti-web01.syd1.squiz.cloud/?a=695346 - Graphik-Regular.otf";
+https://dpti-web01.syd1.squiz.cloud/?a=1427177 - YWFTNatux-Black_DH56c4S0.otf";
+https://dpti-web01.syd1.squiz.cloud/?a=1427181 - YWFTNatux-Bold_Dsm5a6nk.otf";
+https://dpti-web01.syd1.squiz.cloud/?a=1427185 - YWFTNatux-Regular_mxD0O3U-.otf";

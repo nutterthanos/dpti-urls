@@ -1,0 +1,16 @@
+https://dpti-web01.syd1.squiz.cloud/?a=503587 - style.json";
+https://dpti-web01.syd1.squiz.cloud/?a=695369 - style.json";
+https://dpti-web01.syd1.squiz.cloud/?a=820381 - DARegister.GetSubscriptionForm.json";
+https://dpti-web01.syd1.squiz.cloud/?a=822539 - DARegister.GetSubscriptionForm.json";
+https://dpti-web01.syd1.squiz.cloud/?a=823592 - DARegister.GetSubscriptionForm.json";
+https://dpti-web01.syd1.squiz.cloud/?a=930612 - ProdStaticGetSummary.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1073588 - CodeAmendments.GetSubscriptionForm.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1077272 - CodeAmendments.GetSubscriptionForm.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1078707 - CodeAmendments.GetSubscriptionForm.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1259653 - config.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1283164 - venues-map.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1294827 - lts-venues-map.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1310206 - NotifiedDevelopments.GetSubscriptionForm.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1361642 - NotifiedDevelopments.GetSubscriptionForm.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1366074 - NotifiedDevelopments.GetSubscriptionForm.json";
+https://dpti-web01.syd1.squiz.cloud/?a=1427229 - Squiz-DEV-nav_text.json";

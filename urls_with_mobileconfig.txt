@@ -1,0 +1,4 @@
+https://dpti-web01.syd1.squiz.cloud/?a=250398 - ios9.mobileconfig";
+https://dpti-web01.syd1.squiz.cloud/?a=278986 - maximo.mobileconfig";
+https://dpti-web01.syd1.squiz.cloud/?a=587214 - ios12.mobileconfig";
+https://dpti-web01.syd1.squiz.cloud/?a=779762 - ios14.mobileconfig";

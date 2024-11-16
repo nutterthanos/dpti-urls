@@ -1,0 +1,6 @@
+https://dpti-web01.syd1.squiz.cloud/?a=503564 - Data_Footprints.geojson";
+https://dpti-web01.syd1.squiz.cloud/?a=503563 - Building_Footprints.geojson";
+https://dpti-web01.syd1.squiz.cloud/?a=503565 - Data_Footprints_Hover.geojson";
+https://dpti-web01.syd1.squiz.cloud/?a=695344 - Data_Footprints_Hover.geojson";
+https://dpti-web01.syd1.squiz.cloud/?a=695345 - Data_Footprints.geojson";
+https://dpti-web01.syd1.squiz.cloud/?a=698294 - Building_Footprints.geojson";

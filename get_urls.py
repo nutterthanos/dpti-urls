@@ -273,41 +273,39 @@ def fetch_fallback_asset_requests(fallback_url, id):
         try:
             response = requests.head(fallback_url.format(id=id), allow_redirects=False)
             print(f"ID {id}: HTTP {response.status_code} (Fallback URL, Attempt {retries + 1})")
-            if response.status_code == 200 or response.status_code in {301, 302, 303, 307, 308}:
+            
+            # Handle successful responses or redirects
+            if response.status_code in {200, 301, 302, 303, 307, 308}:
+                print(f"ID {id}: Successfully handled fallback request.")
                 return response
+            
+            # Handle not found (404)
             elif response.status_code == 404:
                 print(f"ID {id}: Not found (404). Skipping further attempts.")
                 return None
+            
+            # Log unexpected status
             print(f"ID {id}: Unexpected status {response.status_code}. Retrying...")
         except Exception as e:
             print(f"ID {id}: Error '{e}'. Retrying...")
+        
         retries += 1
+        print(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds after request.")
         time.sleep(FALLBACK_REQUEST_DELAY)
 
     print(f"ID {id}: Failed after {MAX_RETRIES} retries.")
 
-async def process_fallbacks(asset_ids):
-    """Process fallback requests based on the selected implementation."""
-    if USE_REQUESTS_FOR_FALLBACK:
-        # Using synchronous requests for fallback
-        for asset_id in asset_ids:
-            fetch_fallback_asset_requests(FALLBACK_URL, asset_id)
-            print(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds after request.")
-            time.sleep(FALLBACK_REQUEST_DELAY)  # Use time.sleep for synchronous requests
-    else:
-        # Using aiohttp for fallback
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-            for asset_id in asset_ids:
-                await fetch_fallback_asset(session, FALLBACK_URL, asset_id)
-                print(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds after request.")
-                time.sleep(FALLBACK_REQUEST_DELAY)
+def process_fallbacks(asset_ids):
+    """Process fallback requests synchronously using requests."""
+    for asset_id in asset_ids:
+        fetch_fallback_asset_requests(FALLBACK_URL, asset_id)
 
 async def main(start_id, end_id):
     """Main function to process a range of IDs."""
     load_existing_data()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS_BASE)
 
-    # Phase 1: Process primary BASE_URL requests
+    # Phase 1: Process primary BASE_URL requests asynchronously
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
         tasks = [
             fetch_non_fallback(session, BASE_URL, i, semaphore)
@@ -315,9 +313,9 @@ async def main(start_id, end_id):
         ]
         await asyncio.gather(*tasks)
 
-    # Phase 2: Process fallback requests
+    # Phase 2: Process fallback requests synchronously
     print(f"Processing {len(fallback_tasks)} fallback requests...")
-    await process_fallbacks(fallback_tasks)
+    process_fallbacks(fallback_tasks)
 
     # Summary
     print(f"Processed IDs: {end_id - start_id + 1}, Fallbacks: {len(fallback_tasks)}")

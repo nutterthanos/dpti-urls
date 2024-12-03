@@ -25,7 +25,7 @@ BASE_URL = "https://dpti-web01.syd1.squiz.cloud/?a={id}"
 FALLBACK_URL = "https://www.adelaidemetro.com.au/?a={id}"
 
 def enforce_sleep(seconds):
-    log_with_timestamp(f"Enforcing delay of {seconds} seconds.")
+    print(f"Enforcing delay of {seconds} seconds.")
     subprocess.run(["sleep", str(seconds)])
 
 def clean_extension(extension):

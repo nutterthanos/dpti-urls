@@ -35,7 +35,7 @@ def load_existing_data():
             unique_entries = set()
             updated_lines = []
             try:
-                with open(filename, "r", encoding="utf-8") as f:  # Force UTF-8 to handle encoding errors
+                with open(filename, "r", encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
                         if line not in unique_entries:
@@ -45,13 +45,41 @@ def load_existing_data():
                             print(f"Duplicate removed: {line}")
             except Exception as e:
                 print(f"Error reading file {filename}: {e}")
-                continue  # Skip problematic files
+                continue
             # Update file with deduplicated content
             with open(filename, "w", encoding="utf-8") as f:
                 for line in updated_lines:
                     f.write(f"{line}\n")
             existing_entries[ext] = unique_entries
             print(f"Loaded {len(unique_entries)} unique entries from '{filename}'")
+
+    # Deduplicate redirects.txt
+    redirects_file = "redirects.txt"
+    if os.path.exists(redirects_file):
+        print(f"Processing file: {redirects_file}")
+        unique_redirects = set()
+        updated_redirects = []
+        try:
+            with open(redirects_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line not in unique_redirects:
+                        unique_redirects.add(line)
+                        updated_redirects.append(line)
+                    else:
+                        print(f"Duplicate redirect removed: {line}")
+        except Exception as e:
+            print(f"Error reading {redirects_file}: {e}")
+            return
+
+        # Update redirects.txt with deduplicated content
+        with open(redirects_file, "w", encoding="utf-8") as f:
+            for line in updated_redirects:
+                f.write(f"{line}\n")
+
+        # Store redirects in memory for further checks
+        existing_entries["redirects"] = unique_redirects
+        print(f"Loaded {len(unique_redirects)} unique redirects from '{redirects_file}'")
 
 
 async def fetch_service_updates():
@@ -81,6 +109,7 @@ async def handle_response(id, url, response, is_fallback):
     """Handle the HTTP response and save results."""
     content_type = response.headers.get("Content-Type", "")
     content_disp = response.headers.get("Content-Disposition", "")
+    location = response.headers.get("Location", "")
 
     if response.status == 200:
         if content_disp:
@@ -106,25 +135,61 @@ async def handle_response(id, url, response, is_fallback):
                     existing_entries.setdefault("html", set()).add(html_url)
                 else:
                     print(f"ID {id}: HTML entry already exists, skipping ({'Fallback' if is_fallback else 'Base'}).")
+    elif response.status in {301, 302, 303, 307, 308}:
+        if location:
+            redirect_entry = f"{url.format(id=id)} -> {location}"
+            async with aiofiles.open("redirects.txt", "a") as f:
+                if not entry_exists(redirect_entry, "redirects"):
+                    await f.write(f"{redirect_entry}\n")
+                    print(f"ID {id}: Redirect logged: {redirect_entry} ({'Fallback' if is_fallback else 'Base'})")
+                    existing_entries.setdefault("redirects", set()).add(redirect_entry)
+                else:
+                    print(f"ID {id}: Redirect entry already exists, skipping ({'Fallback' if is_fallback else 'Base'}).")
+        else:
+            print(f"ID {id}: Redirect detected but no Location header found ({'Fallback' if is_fallback else 'Base'}).")
     elif response.status == 429:
         print(f"ID {id}: Rate limited. Pausing for {FALLBACK_RETRY_DELAY} seconds...")
         await asyncio.sleep(FALLBACK_RETRY_DELAY)
 
 
 async def fetch_non_fallback(session, base_url, id, semaphore):
-    """Process primary BASE_URL requests."""
-    async with semaphore:
-        try:
-            async with session.head(base_url.format(id=id), allow_redirects=False) as response:
-                print(f"ID {id}: HTTP {response.status} (Base URL)")
-                await handle_response(id, base_url, response, is_fallback=False)
-                # If 404, queue for fallback
-                if response.status == 404:
-                    print(f"ID {id}: Scheduling fallback due to HTTP 404.")
-                    fallback_tasks.append(id)
-        except Exception as e:
-            print(f"ID {id}: Error '{e}' - scheduling fallback.")
-            fallback_tasks.append(id)
+    """Process primary BASE_URL requests and schedule fallback if needed."""
+    retries = 0
+    while retries < MAX_RETRIES:
+        async with semaphore:
+            try:
+                async with session.head(base_url.format(id=id), allow_redirects=False) as response:
+                    print(f"ID {id}: HTTP {response.status} (Base URL)")
+                    await handle_response(id, base_url, response, is_fallback=False)
+                    
+                    if response.status == 200 or response.status in {301, 302, 303, 307, 308}:
+                        # Successfully processed or redirected; no need to retry or fallback
+                        return
+
+                    if response.status == 404:
+                        print(f"ID {id}: Scheduled for fallback due to 404.")
+                        fallback_tasks.append(id)
+                        return  # Exit after scheduling fallback
+
+                    if response.status == 403:
+                        print(f"ID {id}: Access forbidden (403). Skipping.")
+                        return  # Exit without retrying or scheduling fallback
+
+                    # Unexpected status: retry
+                    print(f"ID {id}: Unexpected status {response.status}. Retrying...")
+            except aiohttp.ClientConnectorError as e:
+                print(f"ID {id}: Connection error '{e}'. Retrying ({retries + 1}/{MAX_RETRIES})...")
+            except Exception as e:
+                print(f"ID {id}: Error '{e}' - scheduling fallback.")
+                fallback_tasks.append(id)
+                return  # Exit after scheduling fallback
+
+        retries += 1
+        await asyncio.sleep(RETRY_DELAY)
+
+    # If all retries fail, schedule for fallback
+    print(f"ID {id}: Failed after {MAX_RETRIES} retries - scheduling fallback.")
+    fallback_tasks.append(id)
 
 async def process_service_updates():
     """Fetch and process asset IDs from the service updates endpoint."""
@@ -165,18 +230,20 @@ async def process_service_updates():
 
 
 async def fetch_fallback_asset(session, fallback_url, id):
-    """Process fallback requests."""
+    """Process fallback requests only for scheduled IDs."""
     retries = 0
     while retries < MAX_RETRIES:
         try:
             async with session.head(fallback_url.format(id=id), allow_redirects=False) as response:
                 print(f"ID {id}: HTTP {response.status} (Fallback URL, Attempt {retries + 1})")
                 await handle_response(id, fallback_url, response, is_fallback=True)
-                return
+                return  # Exit after successful or handled response
+        except aiohttp.ClientConnectorError as e:
+            print(f"ID {id}: Connection error '{e}' - Retrying ({retries + 1}/{MAX_RETRIES}).")
         except Exception as e:
             print(f"ID {id}: Error '{e}' - Retrying ({retries + 1}/{MAX_RETRIES}).")
-            retries += 1
-            await asyncio.sleep(FALLBACK_RETRY_DELAY)
+        retries += 1
+        await asyncio.sleep(FALLBACK_RETRY_DELAY)
 
     print(f"ID {id}: Failed after {MAX_RETRIES} retries (Fallback).")
 
@@ -194,7 +261,7 @@ async def main(start_id, end_id):
         ]
         await asyncio.gather(*tasks)
 
-        # Phase 2: Process fallback requests sequentially
+        # Phase 2: Process fallback requests sequentially for scheduled IDs
         print(f"Processing {len(fallback_tasks)} fallback requests...")
         for asset_id in fallback_tasks:
             await fetch_fallback_asset(session, FALLBACK_URL, asset_id)
@@ -218,6 +285,6 @@ if __name__ == "__main__":
     args = parse_arguments()
 
     if args.command == "run":
-        asyncio.run(main(160000, 170000))
+        asyncio.run(main(1030000, 1032000))
     elif args.command == "dump-service-updates":
         asyncio.run(process_service_updates())

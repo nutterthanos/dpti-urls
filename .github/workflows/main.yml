@@ -24,7 +24,7 @@ jobs:
 
       - name: Run main script
         run: |
-          python get_urls.py
+          python get_urls.py run
 
       - name: Run increment script
         run: |

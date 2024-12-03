@@ -285,6 +285,6 @@ if __name__ == "__main__":
     args = parse_arguments()
 
     if args.command == "run":
-        asyncio.run(main(1030000, 1032000))
+        asyncio.run(main(0, 1000))
     elif args.command == "dump-service-updates":
         asyncio.run(process_service_updates())

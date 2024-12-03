@@ -282,7 +282,7 @@ def fetch_fallback_asset_requests(fallback_url, id):
         except Exception as e:
             print(f"ID {id}: Error '{e}'. Retrying...")
         retries += 1
-        sleep(FALLBACK_REQUEST_DELAY)
+        time.sleep(FALLBACK_REQUEST_DELAY)
 
     print(f"ID {id}: Failed after {MAX_RETRIES} retries.")
 

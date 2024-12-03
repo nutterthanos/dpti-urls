@@ -299,6 +299,8 @@ def process_fallbacks(asset_ids):
     """Process fallback requests synchronously using requests."""
     for asset_id in asset_ids:
         fetch_fallback_asset_requests(FALLBACK_URL, asset_id)
+        print(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds after request.")
+        time.sleep(FALLBACK_REQUEST_DELAY)
 
 async def main(start_id, end_id):
     """Main function to process a range of IDs."""

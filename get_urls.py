@@ -165,7 +165,7 @@ async def handle_response(id, url, response, is_fallback):
                     print(f"ID {id}: Redirect entry already exists, skipping ({'Fallback' if is_fallback else 'Base'}).")
     elif status == 429:
         print(f"ID {id}: Rate limited. Pausing for {FALLBACK_RETRY_DELAY} seconds...")
-        await asyncio.sleep(FALLBACK_RETRY_DELAY)
+        time.sleep(FALLBACK_REQUEST_DELAY)
 
 
 async def fetch_non_fallback(session, base_url, id, semaphore):
@@ -201,7 +201,7 @@ async def fetch_non_fallback(session, base_url, id, semaphore):
                 return  # Exit after scheduling fallback
 
         retries += 1
-        await asyncio.sleep(RETRY_DELAY)
+        time.sleep(FALLBACK_REQUEST_DELAY)
 
     # If all retries fail, schedule for fallback
     print(f"ID {id}: Failed after {MAX_RETRIES} retries - scheduling fallback.")
@@ -238,7 +238,7 @@ async def process_service_updates():
         for asset_id in failed_asset_ids:
             await fetch_fallback_asset(session, FALLBACK_URL, asset_id)
             print(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds after fallback request.")
-            await asyncio.sleep(FALLBACK_REQUEST_DELAY)
+            time.sleep(FALLBACK_REQUEST_DELAY)
 
     # Summary
     print(f"Total asset IDs processed: {len(asset_ids)}")
@@ -262,7 +262,7 @@ async def fetch_fallback_asset(session, fallback_url, id):
 
         retries += 1
         print(f"ID {id}: Sleeping for {FALLBACK_RETRY_DELAY} seconds before retry.")
-        await asyncio.sleep(FALLBACK_RETRY_DELAY)
+        time.sleep(FALLBACK_REQUEST_DELAY)
 
     print(f"ID {id}: Failed after {MAX_RETRIES} retries (Fallback).")
 
@@ -292,12 +292,15 @@ async def process_fallbacks(asset_ids):
         # Using synchronous requests for fallback
         for asset_id in asset_ids:
             fetch_fallback_asset_requests(FALLBACK_URL, asset_id)
+            print(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds after request.")
+            time.sleep(FALLBACK_REQUEST_DELAY)  # Use time.sleep for synchronous requests
     else:
         # Using aiohttp for fallback
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
             for asset_id in asset_ids:
                 await fetch_fallback_asset(session, FALLBACK_URL, asset_id)
-                await asyncio.sleep(FALLBACK_REQUEST_DELAY)
+                print(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds after request.")
+                time.sleep(FALLBACK_REQUEST_DELAY)
 
 async def main(start_id, end_id):
     """Main function to process a range of IDs."""

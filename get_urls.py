@@ -1,15 +1,17 @@
 import aiohttp
 import asyncio
 import aiofiles
+import requests
 import os
 from argparse import ArgumentParser
+from time import sleep
 
 # Constants for request limits and delays
 MAX_CONCURRENT_REQUESTS_BASE = 100
 MAX_RETRIES = 1000
 RETRY_DELAY = 2
 FALLBACK_RETRY_DELAY = 10
-FALLBACK_REQUEST_DELAY = 5
+FALLBACK_REQUEST_DELAY = 2  # For requests-based fallback processing
 
 existing_entries = {}
 fallback_tasks = []
@@ -107,11 +109,22 @@ def entry_exists(entry, category):
 
 async def handle_response(id, url, response, is_fallback):
     """Handle the HTTP response and save results."""
-    content_type = response.headers.get("Content-Type", "")
-    content_disp = response.headers.get("Content-Disposition", "")
-    location = response.headers.get("Location", "")
+    # Check if the response is from aiohttp or requests
+    if isinstance(response, aiohttp.ClientResponse):
+        status = response.status
+        headers = response.headers
+    elif isinstance(response, requests.Response):
+        status = response.status_code
+        headers = response.headers
+    else:
+        print(f"ID {id}: Unknown response type. Skipping.")
+        return
 
-    if response.status == 200:
+    content_type = headers.get("Content-Type", "")
+    content_disp = headers.get("Content-Disposition", "")
+    location = headers.get("Location", "")
+
+    if status == 200:
         if content_disp:
             filename = content_disp.split("filename=")[-1].strip('\"')
             extension = clean_extension(filename.split(".")[-1]) if "." in filename else "unknown"
@@ -135,7 +148,10 @@ async def handle_response(id, url, response, is_fallback):
                     existing_entries.setdefault("html", set()).add(html_url)
                 else:
                     print(f"ID {id}: HTML entry already exists, skipping ({'Fallback' if is_fallback else 'Base'}).")
-    elif response.status in {301, 302, 303, 307, 308}:
+    elif status == 403:
+        print(f"ID {id}: Access forbidden (403). Skipping.")
+        return  # Exit without retrying or scheduling fallback
+    elif status in {301, 302, 303, 307, 308}:
         if location:
             redirect_entry = f"{url.format(id=id)} -> {location}"
             async with aiofiles.open("redirects.txt", "a") as f:
@@ -145,9 +161,7 @@ async def handle_response(id, url, response, is_fallback):
                     existing_entries.setdefault("redirects", set()).add(redirect_entry)
                 else:
                     print(f"ID {id}: Redirect entry already exists, skipping ({'Fallback' if is_fallback else 'Base'}).")
-        else:
-            print(f"ID {id}: Redirect detected but no Location header found ({'Fallback' if is_fallback else 'Base'}).")
-    elif response.status == 429:
+    elif status == 429:
         print(f"ID {id}: Rate limited. Pausing for {FALLBACK_RETRY_DELAY} seconds...")
         await asyncio.sleep(FALLBACK_RETRY_DELAY)
 
@@ -162,7 +176,7 @@ async def fetch_non_fallback(session, base_url, id, semaphore):
                     print(f"ID {id}: HTTP {response.status} (Base URL)")
                     await handle_response(id, base_url, response, is_fallback=False)
                     
-                    if response.status == 200 or response.status in {301, 302, 303, 307, 308}:
+                    if response.status in {200, 301, 302, 303, 307, 308}:
                         # Successfully processed or redirected; no need to retry or fallback
                         return
 
@@ -242,10 +256,31 @@ async def fetch_fallback_asset(session, fallback_url, id):
             print(f"ID {id}: Connection error '{e}' - Retrying ({retries + 1}/{MAX_RETRIES}).")
         except Exception as e:
             print(f"ID {id}: Error '{e}' - Retrying ({retries + 1}/{MAX_RETRIES}).")
+
         retries += 1
-        await asyncio.sleep(FALLBACK_RETRY_DELAY)
+        await asyncio.sleep(FALLBACK_RETRY_DELAY)  # Ensure a delay after each retry
 
     print(f"ID {id}: Failed after {MAX_RETRIES} retries (Fallback).")
+
+def fetch_fallback_asset_requests(fallback_url, id):
+    """Process fallback requests using requests."""
+    retries = 0
+    while retries < MAX_RETRIES:
+        try:
+            response = requests.head(fallback_url.format(id=id), allow_redirects=False)
+            print(f"ID {id}: HTTP {response.status_code} (Fallback URL, Attempt {retries + 1})")
+            if response.status_code == 200 or response.status_code in {301, 302, 303, 307, 308}:
+                return response
+            elif response.status_code == 404:
+                print(f"ID {id}: Not found (404). Skipping further attempts.")
+                return None
+            print(f"ID {id}: Unexpected status {response.status_code}. Retrying...")
+        except Exception as e:
+            print(f"ID {id}: Error '{e}'. Retrying...")
+        retries += 1
+        sleep(FALLBACK_REQUEST_DELAY)
+
+    print(f"ID {id}: Failed after {MAX_RETRIES} retries.")
 
 
 async def main(start_id, end_id):
@@ -255,19 +290,17 @@ async def main(start_id, end_id):
 
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
         # Phase 1: Process primary BASE_URL requests
-        tasks = [
-            fetch_non_fallback(session, BASE_URL, i, semaphore)
-            for i in range(start_id, end_id + 1)
-        ]
+        tasks = [fetch_non_fallback(session, BASE_URL, i, semaphore) for i in range(start_id, end_id + 1)]
         await asyncio.gather(*tasks)
 
-        # Phase 2: Process fallback requests sequentially for scheduled IDs
+        # Phase 2: Process fallback requests sequentially
         print(f"Processing {len(fallback_tasks)} fallback requests...")
         for asset_id in fallback_tasks:
-            await fetch_fallback_asset(session, FALLBACK_URL, asset_id)
-            await asyncio.sleep(FALLBACK_REQUEST_DELAY)
+            response = fetch_fallback_asset_requests(FALLBACK_URL, asset_id)
+            if response:
+                await handle_response(asset_id, FALLBACK_URL, response, is_fallback=True)
+            sleep(FALLBACK_REQUEST_DELAY)
 
-    # Summary
     print(f"Processed IDs: {end_id - start_id + 1}, Fallbacks: {len(fallback_tasks)}")
 
 def parse_arguments():

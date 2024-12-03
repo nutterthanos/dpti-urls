@@ -4,7 +4,7 @@ import aiofiles
 import requests
 import os
 from argparse import ArgumentParser
-from time import sleep
+import time
 
 # Constants for request limits and delays
 MAX_CONCURRENT_REQUESTS_BASE = 100
@@ -15,6 +15,8 @@ FALLBACK_REQUEST_DELAY = 2  # For requests-based fallback processing
 
 existing_entries = {}
 fallback_tasks = []
+
+USE_REQUESTS_FOR_FALLBACK = True  # Toggle between aiohttp (False) and requests (True)
 
 # Base URLs for service updates
 SERVICE_UPDATES_URL = "https://www.adelaidemetro.com.au/metro/api/service-updates"
@@ -244,10 +246,11 @@ async def process_service_updates():
 
 
 async def fetch_fallback_asset(session, fallback_url, id):
-    """Process fallback requests only for scheduled IDs."""
+    """Process fallback requests asynchronously using aiohttp."""
     retries = 0
     while retries < MAX_RETRIES:
         try:
+            print(f"ID {id}: Attempting fallback URL request (Attempt {retries + 1})")
             async with session.head(fallback_url.format(id=id), allow_redirects=False) as response:
                 print(f"ID {id}: HTTP {response.status} (Fallback URL, Attempt {retries + 1})")
                 await handle_response(id, fallback_url, response, is_fallback=True)
@@ -258,12 +261,13 @@ async def fetch_fallback_asset(session, fallback_url, id):
             print(f"ID {id}: Error '{e}' - Retrying ({retries + 1}/{MAX_RETRIES}).")
 
         retries += 1
-        await asyncio.sleep(FALLBACK_RETRY_DELAY)  # Ensure a delay after each retry
+        print(f"ID {id}: Sleeping for {FALLBACK_RETRY_DELAY} seconds before retry.")
+        await asyncio.sleep(FALLBACK_RETRY_DELAY)
 
     print(f"ID {id}: Failed after {MAX_RETRIES} retries (Fallback).")
 
 def fetch_fallback_asset_requests(fallback_url, id):
-    """Process fallback requests using requests."""
+    """Process fallback requests synchronously using requests."""
     retries = 0
     while retries < MAX_RETRIES:
         try:
@@ -282,25 +286,37 @@ def fetch_fallback_asset_requests(fallback_url, id):
 
     print(f"ID {id}: Failed after {MAX_RETRIES} retries.")
 
+async def process_fallbacks(asset_ids):
+    """Process fallback requests based on the selected implementation."""
+    if USE_REQUESTS_FOR_FALLBACK:
+        # Using synchronous requests for fallback
+        for asset_id in asset_ids:
+            fetch_fallback_asset_requests(FALLBACK_URL, asset_id)
+    else:
+        # Using aiohttp for fallback
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+            for asset_id in asset_ids:
+                await fetch_fallback_asset(session, FALLBACK_URL, asset_id)
+                await asyncio.sleep(FALLBACK_REQUEST_DELAY)
 
 async def main(start_id, end_id):
     """Main function to process a range of IDs."""
     load_existing_data()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS_BASE)
 
+    # Phase 1: Process primary BASE_URL requests
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-        # Phase 1: Process primary BASE_URL requests
-        tasks = [fetch_non_fallback(session, BASE_URL, i, semaphore) for i in range(start_id, end_id + 1)]
+        tasks = [
+            fetch_non_fallback(session, BASE_URL, i, semaphore)
+            for i in range(start_id, end_id + 1)
+        ]
         await asyncio.gather(*tasks)
 
-        # Phase 2: Process fallback requests sequentially
-        print(f"Processing {len(fallback_tasks)} fallback requests...")
-        for asset_id in fallback_tasks:
-            response = fetch_fallback_asset_requests(FALLBACK_URL, asset_id)
-            if response:
-                await handle_response(asset_id, FALLBACK_URL, response, is_fallback=True)
-            sleep(FALLBACK_REQUEST_DELAY)
+    # Phase 2: Process fallback requests
+    print(f"Processing {len(fallback_tasks)} fallback requests...")
+    await process_fallbacks(fallback_tasks)
 
+    # Summary
     print(f"Processed IDs: {end_id - start_id + 1}, Fallbacks: {len(fallback_tasks)}")
 
 def parse_arguments():

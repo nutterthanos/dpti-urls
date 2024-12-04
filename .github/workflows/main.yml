@@ -22,6 +22,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install aiohttp asyncio aiofiles requests
 
+      - name: Test Sleep
+        run: |
+          echo "Testing sleep with subprocess"
+          python -c "import subprocess; from datetime import datetime; print(f'Start: {datetime.utcnow()}'); subprocess.run(['sleep', '5']); print(f'End: {datetime.utcnow()}')"
+          echo "Testing sleep with time.sleep"
+          python -c "import time; from datetime import datetime; print(f'Start: {datetime.utcnow()}'); time.sleep(5); print(f'End: {datetime.utcnow()}')"
+
       - name: Run main script
         run: |
           python get_urls.py run

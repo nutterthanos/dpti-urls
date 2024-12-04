@@ -13,7 +13,7 @@ MAX_CONCURRENT_REQUESTS_BASE = 100
 MAX_RETRIES = 1000
 RETRY_DELAY = 2
 FALLBACK_RETRY_DELAY = 10
-FALLBACK_REQUEST_DELAY = 2  # For requests-based fallback processing
+FALLBACK_REQUEST_DELAY = 5  # For requests-based fallback processing
 
 existing_entries = {}
 fallback_tasks = []

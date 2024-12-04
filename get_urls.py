@@ -6,6 +6,7 @@ import os
 from argparse import ArgumentParser
 import time
 import subprocess
+from datetime import datetime
 
 # Constants for request limits and delays
 MAX_CONCURRENT_REQUESTS_BASE = 100
@@ -27,6 +28,9 @@ FALLBACK_URL = "https://www.adelaidemetro.com.au/?a={id}"
 def enforce_sleep(seconds):
     print(f"Enforcing delay of {seconds} seconds.")
     subprocess.run(["sleep", str(seconds)])
+
+def log_with_timestamp(message):
+    print(f"{datetime.now()}: {message}")
 
 def clean_extension(extension):
     """Clean trailing characters like '; from file extensions."""
@@ -271,47 +275,37 @@ async def fetch_fallback_asset(session, fallback_url, id):
     print(f"ID {id}: Failed after {MAX_RETRIES} retries (Fallback).")
 
 def fetch_fallback_asset_requests(fallback_url, id):
-    """Process fallback requests synchronously using requests."""
     retries = 0
     while retries < MAX_RETRIES:
         try:
+            log_with_timestamp(f"Starting request for ID {id}, Attempt {retries + 1}")
             response = requests.head(fallback_url.format(id=id), allow_redirects=False)
-            print(f"ID {id}: HTTP {response.status_code} (Fallback URL, Attempt {retries + 1})")
-            
-            # Handle successful responses or redirects
+            log_with_timestamp(f"ID {id}: Received HTTP {response.status_code}")
             if response.status_code in {200, 301, 302, 303, 307, 308}:
-                print(f"ID {id}: Successfully handled fallback request.")
                 return response
-            
-            # Handle not found (404)
             elif response.status_code == 404:
-                print(f"ID {id}: Not found (404). Skipping further attempts.")
+                log_with_timestamp(f"ID {id}: Not found (404). Skipping further attempts.")
                 return None
-            
-            # Log unexpected status
-            print(f"ID {id}: Unexpected status {response.status_code}. Retrying...")
         except Exception as e:
-            print(f"ID {id}: Error '{e}'. Retrying...")
-        
+            log_with_timestamp(f"ID {id}: Error '{e}'")
         retries += 1
-        print(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds after request.")
-        enforce_sleep(FALLBACK_REQUEST_DELAY)
+        log_with_timestamp(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds before retry.")
+        time.sleep(FALLBACK_REQUEST_DELAY)
 
-    print(f"ID {id}: Failed after {MAX_RETRIES} retries.")
-
-def process_fallbacks(asset_ids):
-    """Process fallback requests synchronously using requests."""
+def process_fallbacks_sequential(asset_ids):
+    """Process fallback requests sequentially."""
     for asset_id in asset_ids:
-        fetch_fallback_asset_requests(FALLBACK_URL, asset_id)
+        print(f"Processing fallback for ID {asset_id}")
+        fetch_fallback_asset_requests(FALLBACK_URL, asset_id)  # Use `requests` for fallback
         print(f"Sleeping for {FALLBACK_REQUEST_DELAY} seconds after request.")
-        enforce_sleep(FALLBACK_REQUEST_DELAY)
+        time.sleep(FALLBACK_REQUEST_DELAY)
 
 async def main(start_id, end_id):
     """Main function to process a range of IDs."""
     load_existing_data()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS_BASE)
 
-    # Phase 1: Process primary BASE_URL requests asynchronously
+    # Phase 1: Process primary BASE_URL requests
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
         tasks = [
             fetch_non_fallback(session, BASE_URL, i, semaphore)
@@ -319,9 +313,9 @@ async def main(start_id, end_id):
         ]
         await asyncio.gather(*tasks)
 
-    # Phase 2: Process fallback requests synchronously
+    # Phase 2: Process fallback requests sequentially
     print(f"Processing {len(fallback_tasks)} fallback requests...")
-    process_fallbacks(fallback_tasks)
+    process_fallbacks_sequential(fallback_tasks)  # Ensure strict sequential fallback processing
 
     # Summary
     print(f"Processed IDs: {end_id - start_id + 1}, Fallbacks: {len(fallback_tasks)}")
